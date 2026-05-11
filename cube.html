@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Olist OLAP Data Cube</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0a0d14;font-family:'Segoe UI',sans-serif;color:#e0e6f0;overflow:hidden;}
+  #canvas{display:block;}
+
+  /* HUD */
+  #hud{position:fixed;top:20px;left:20px;z-index:10;}
+  #hud h1{font-size:22px;font-weight:800;background:linear-gradient(90deg,#4C8EDA,#2ecc71);
+           -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  #hud p{font-size:12px;color:#7c8db0;margin-top:4px;}
+
+  /* KPI strip */
+  #kpis{position:fixed;top:20px;right:20px;z-index:10;display:flex;gap:12px;}
+  .kpi{background:rgba(30,33,48,0.85);border:1px solid #2e3250;border-radius:12px;
+        padding:14px 18px;text-align:center;backdrop-filter:blur(8px);}
+  .kpi .val{font-size:20px;font-weight:800;color:#4C8EDA;}
+  .kpi .lbl{font-size:10px;color:#7c8db0;text-transform:uppercase;letter-spacing:.8px;margin-top:2px;}
+
+  /* Tooltip */
+  #tip{position:fixed;display:none;background:rgba(14,18,30,0.95);
+        border:1px solid #4C8EDA;border-radius:10px;padding:12px 16px;
+        font-size:13px;pointer-events:none;z-index:20;max-width:220px;}
+  #tip .t-title{color:#4C8EDA;font-weight:700;margin-bottom:6px;font-size:14px;}
+  #tip .t-row{display:flex;justify-content:space-between;gap:16px;color:#b0bcd0;margin:3px 0;}
+  #tip .t-val{color:#fff;font-weight:600;}
+
+  /* Legend */
+  #legend{position:fixed;bottom:24px;left:20px;z-index:10;
+           background:rgba(20,23,35,0.9);border:1px solid #2e3250;
+           border-radius:10px;padding:14px 18px;}
+  #legend h4{font-size:11px;color:#7c8db0;text-transform:uppercase;margin-bottom:8px;}
+  .leg-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#a0b0c0;margin:4px 0;}
+  .leg-dot{width:12px;height:12px;border-radius:3px;}
+
+  /* Controls hint */
+  #hint{position:fixed;bottom:24px;right:20px;z-index:10;font-size:11px;color:#4a5468;
+         text-align:right;line-height:1.8;}
+
+  /* Axis labels canvas */
+  #labels{position:fixed;top:0;left:0;pointer-events:none;z-index:5;}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<canvas id="labels"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <h1>📦 Olist OLAP Data Cube</h1>
+  <p>Category × Quarter × State &nbsp;·&nbsp; Hover a cell to inspect</p>
+</div>
+
+<!-- KPIs -->
+<div id="kpis">
+  <div class="kpi"><div class="val">R$ 14.3M</div><div class="lbl">Total Revenue</div></div>
+  <div class="kpi"><div class="val">98,666</div><div class="lbl">Orders</div></div>
+  <div class="kpi"><div class="val">98,666</div><div class="lbl">Customers</div></div>
+  <div class="kpi"><div class="val">32,951</div><div class="lbl">Products</div></div>
+  <div class="kpi"><div class="val">3,095</div><div class="lbl">Sellers</div></div>
+</div>
+
+<!-- Tooltip -->
+<div id="tip">
+  <div class="t-title" id="t-title"></div>
+  <div class="t-row"><span>Revenue</span><span class="t-val" id="t-rev"></span></div>
+  <div class="t-row"><span>Orders</span><span class="t-val" id="t-ord"></span></div>
+  <div class="t-row"><span>Quarter</span><span class="t-val" id="t-qtr"></span></div>
+  <div class="t-row"><span>State</span><span class="t-val" id="t-st"></span></div>
+</div>
+
+<!-- Legend -->
+<div id="legend">
+  <h4>Revenue Intensity</h4>
+  <div class="leg-row"><div class="leg-dot" style="background:#0d3b6e"></div>Low</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#1a6fb5"></div>Medium</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#4C8EDA"></div>High</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#2ecc71"></div>Top</div>
+  <br>
+  <div class="leg-row" style="margin-top:6px;"><span style="font-size:11px;color:#4a5468;">X → Category &nbsp; Y → Quarter &nbsp; Z → State</span></div>
+</div>
+
+<div id="hint">🖱️ Drag to rotate &nbsp;|&nbsp; Scroll to zoom<br>Hover cube to inspect data</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script>
+// ── Data ─────────────────────────────────────────────────────────────────────
+const CELLS   = [{"x": 0, "y": 0, "z": 0, "revenue": 135.0, "orders": 1, "cat": "beleza_saude", "qtr": "2016-Q3", "state": "SP", "norm": 0.001}, {"x": 0, "y": 0, "z": 1, "revenue": 0, "orders": 0, "cat": "beleza_saude", "qtr": "2016-Q3", "state": "RJ", "norm": 0.0}, {"x": 0, "y": 0, "z": 2, "revenue": 0, "orders": 0, "cat": "beleza_saude", "qtr": "2016-Q3", "state": "MG", "norm": 0.0}, {"x": 0, "y": 0, "z": 3, "revenue": 0, "orders": 0, "cat": "beleza_saude", "qtr": "2016-Q3", "state": "RS", "norm": 0.0}, {"x": 0, "y": 0, "z": 4, "revenue": 0, "orders": 0, "cat": "beleza_saude", "qtr": "2016-Q3", "state": "PR", "norm": 0.0}, {"x": 0, "y": 1, "z": 0, "revenue": 874.0, "orders": 11, "cat": "beleza_saude", "qtr": "2016-Q4", "state": "SP", "norm": 0.0068}, {"x": 0, "y": 1, "z": 1, "revenue": 1446.0, "orders": 7, "cat": "beleza_saude", "qtr": "2016-Q4", "state": "RJ", "norm": 0.0112}, {"x": 0, "y": 1, "z": 2, "revenue": 684.0, "orders": 7, "cat": "beleza_saude", "qtr": "2016-Q4", "state": "MG", "norm": 0.0053}, {"x": 0, "y": 1, "z": 3, "revenue": 157.0, "orders": 1, "cat": "beleza_saude", "qtr": "2016-Q4", "state": "RS", "norm": 0.0012}, {"x": 0, "y": 1, "z": 4, "revenue": 447.0, "orders": 6, "cat": "beleza_saude", "qtr": "2016-Q4", "state": "PR", "norm": 0.0035}, {"x": 0, "y": 2, "z": 0, "revenue": 19793.0, "orders": 163, "cat": "beleza_saude", "qtr": "2017-Q1", "state": "SP", "norm": 0.1534}, {"x": 0, "y": 2, "z": 1, "revenue": 8636.0, "orders": 53, "cat": "beleza_saude", "qtr": "2017-Q1", "state": "RJ", "norm": 0.0669}, {"x": 0, "y": 2, "z": 2, "revenue": 6469.0, "orders": 59, "cat": "beleza_saude", "qtr": "2017-Q1", "state": "MG", "norm": 0.0501}, {"x": 0, "y": 2, "z": 3, "revenue": 5682.0, "orders": 28, "cat": "beleza_saude", "qtr": "2017-Q1", "state": "RS", "norm": 0.044}, {"x": 0, "y": 2, "z": 4, "revenue": 2936.0, "orders": 25, "cat": "beleza_saude", "qtr": "2017-Q1", "state": "PR", "norm": 0.0227}, {"x": 0, "y": 3, "z": 0, "revenue": 31447.0, "orders": 264, "cat": "beleza_saude", "qtr": "2017-Q2", "state": "SP", "norm": 0.2437}, {"x": 0, "y": 3, "z": 1, "revenue": 15731.0, "orders": 81, "cat": "beleza_saude", "qtr": "2017-Q2", "state": "RJ", "norm": 0.1219}, {"x": 0, "y": 3, "z": 2, "revenue": 12181.0, "orders": 76, "cat": "beleza_saude", "qtr": "2017-Q2", "state": "MG", "norm": 0.0944}, {"x": 0, "y": 3, "z": 3, "revenue": 4263.0, "orders": 34, "cat": "beleza_saude", "qtr": "2017-Q2", "state": "RS", "norm": 0.033}, {"x": 0, "y": 3, "z": 4, "revenue": 7575.0, "orders": 30, "cat": "beleza_saude", "qtr": "2017-Q2", "state": "PR", "norm": 0.0587}, {"x": 0, "y": 4, "z": 0, "revenue": 41392.0, "orders": 369, "cat": "beleza_saude", "qtr": "2017-Q3", "state": "SP", "norm": 0.3207}, {"x": 0, "y": 4, "z": 1, "revenue": 21330.0, "orders": 122, "cat": "beleza_saude", "qtr": "2017-Q3", "state": "RJ", "norm": 0.1653}, {"x": 0, "y": 4, "z": 2, "revenue": 15149.0, "orders": 112, "cat": "beleza_saude", "qtr": "2017-Q3", "state": "MG", "norm": 0.1174}, {"x": 0, "y": 4, "z": 3, "revenue": 5373.0, "orders": 45, "cat": "beleza_saude", "qtr": "2017-Q3", "state": "RS", "norm": 0.0416}, {"x": 0, "y": 4, "z": 4, "revenue": 5980.0, "orders": 50, "cat": "beleza_saude", "qtr": "2017-Q3", "state": "PR", "norm": 0.0463}, {"x": 0, "y": 5, "z": 0, "revenue": 69202.0, "orders": 492, "cat": "beleza_saude", "qtr": "2017-Q4", "state": "SP", "norm": 0.5362}, {"x": 0, "y": 5, "z": 1, "revenue": 20689.0, "orders": 144, "cat": "beleza_saude", "qtr": "2017-Q4", "state": "RJ", "norm": 0.1603}, {"x": 0, "y": 5, "z": 2, "revenue": 22756.0, "orders": 158, "cat": "beleza_saude", "qtr": "2017-Q4", "state": "MG", "norm": 0.1763}, {"x": 0, "y": 5, "z": 3, "revenue": 13838.0, "orders": 59, "cat": "beleza_saude", "qtr": "2017-Q4", "state": "RS", "norm": 0.1072}, {"x": 0, "y": 5, "z": 4, "revenue": 6628.0, "orders": 57, "cat": "beleza_saude", "qtr": "2017-Q4", "state": "PR", "norm": 0.0514}, {"x": 0, "y": 6, "z": 0, "revenue": 94321.0, "orders": 770, "cat": "beleza_saude", "qtr": "2018-Q1", "state": "SP", "norm": 0.7308}, {"x": 0, "y": 6, "z": 1, "revenue": 27062.0, "orders": 201, "cat": "beleza_saude", "qtr": "2018-Q1", "state": "RJ", "norm": 0.2097}, {"x": 0, "y": 6, "z": 2, "revenue": 36893.0, "orders": 219, "cat": "beleza_saude", "qtr": "2018-Q1", "state": "MG", "norm": 0.2859}, {"x": 0, "y": 6, "z": 3, "revenue": 10891.0, "orders": 99, "cat": "beleza_saude", "qtr": "2018-Q1", "state": "RS", "norm": 0.0844}, {"x": 0, "y": 6, "z": 4, "revenue": 11050.0, "orders": 79, "cat": "beleza_saude", "qtr": "2018-Q1", "state": "PR", "norm": 0.0856}, {"x": 0, "y": 7, "z": 0, "revenue": 129057.0, "orders": 1019, "cat": "beleza_saude", "qtr": "2018-Q2", "state": "SP", "norm": 1.0}, {"x": 0, "y": 7, "z": 1, "revenue": 31696.0, "orders": 227, "cat": "beleza_saude", "qtr": "2018-Q2", "state": "RJ", "norm": 0.2456}, {"x": 0, "y": 7, "z": 2, "revenue": 35065.0, "orders": 213, "cat": "beleza_saude", "qtr": "2018-Q2", "state": "MG", "norm": 0.2717}, {"x": 0, "y": 7, "z": 3, "revenue": 8528.0, "orders": 70, "cat": "beleza_saude", "qtr": "2018-Q2", "state": "RS", "norm": 0.0661}, {"x": 0, "y": 7, "z": 4, "revenue": 12857.0, "orders": 82, "cat": "beleza_saude", "qtr": "2018-Q2", "state": "PR", "norm": 0.0996}, {"x": 0, "y": 8, "z": 0, "revenue": 89707.0, "orders": 700, "cat": "beleza_saude", "qtr": "2018-Q3", "state": "SP", "norm": 0.6951}, {"x": 0, "y": 8, "z": 1, "revenue": 22196.0, "orders": 139, "cat": "beleza_saude", "qtr": "2018-Q3", "state": "RJ", "norm": 0.172}, {"x": 0, "y": 8, "z": 2, "revenue": 30770.0, "orders": 167, "cat": "beleza_saude", "qtr": "2018-Q3", "state": "MG", "norm": 0.2384}, {"x": 0, "y": 8, "z": 3, "revenue": 7482.0, "orders": 60, "cat": "beleza_saude", "qtr": "2018-Q3", "state": "RS", "norm": 0.058}, {"x": 0, "y": 8, "z": 4, "revenue": 8267.0, "orders": 52, "cat": "beleza_saude", "qtr": "2018-Q3", "state": "PR", "norm": 0.0641}, {"x": 1, "y": 0, "z": 0, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q3", "state": "SP", "norm": 0.0}, {"x": 1, "y": 0, "z": 1, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q3", "state": "RJ", "norm": 0.0}, {"x": 1, "y": 0, "z": 2, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q3", "state": "MG", "norm": 0.0}, {"x": 1, "y": 0, "z": 3, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q3", "state": "RS", "norm": 0.0}, {"x": 1, "y": 0, "z": 4, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q3", "state": "PR", "norm": 0.0}, {"x": 1, "y": 1, "z": 0, "revenue": 663.0, "orders": 2, "cat": "relogios_presentes", "qtr": "2016-Q4", "state": "SP", "norm": 0.0051}, {"x": 1, "y": 1, "z": 1, "revenue": 1399.0, "orders": 1, "cat": "relogios_presentes", "qtr": "2016-Q4", "state": "RJ", "norm": 0.0108}, {"x": 1, "y": 1, "z": 2, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q4", "state": "MG", "norm": 0.0}, {"x": 1, "y": 1, "z": 3, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q4", "state": "RS", "norm": 0.0}, {"x": 1, "y": 1, "z": 4, "revenue": 0, "orders": 0, "cat": "relogios_presentes", "qtr": "2016-Q4", "state": "PR", "norm": 0.0}, {"x": 1, "y": 2, "z": 0, "revenue": 20953.0, "orders": 46, "cat": "relogios_presentes", "qtr": "2017-Q1", "state": "SP", "norm": 0.1624}, {"x": 1, "y": 2, "z": 1, "revenue": 8256.0, "orders": 23, "cat": "relogios_presentes", "qtr": "2017-Q1", "state": "RJ", "norm": 0.064}, {"x": 1, "y": 2, "z": 2, "revenue": 2474.0, "orders": 12, "cat": "relogios_presentes", "qtr": "2017-Q1", "state": "MG", "norm": 0.0192}, {"x": 1, "y": 2, "z": 3, "revenue": 4131.0, "orders": 7, "cat": "relogios_presentes", "qtr": "2017-Q1", "state": "RS", "norm": 0.032}, {"x": 1, "y": 2, "z": 4, "revenue": 1028.0, "orders": 3, "cat": "relogios_presentes", "qtr": "2017-Q1", "state": "PR", "norm": 0.008}, {"x": 1, "y": 3, "z": 0, "revenue": 33226.0, "orders": 128, "cat": "relogios_presentes", "qtr": "2017-Q2", "state": "SP", "norm": 0.2575}, {"x": 1, "y": 3, "z": 1, "revenue": 15304.0, "orders": 48, "cat": "relogios_presentes", "qtr": "2017-Q2", "state": "RJ", "norm": 0.1186}, {"x": 1, "y": 3, "z": 2, "revenue": 10516.0, "orders": 35, "cat": "relogios_presentes", "qtr": "2017-Q2", "state": "MG", "norm": 0.0815}, {"x": 1, "y": 3, "z": 3, "revenue": 4275.0, "orders": 16, "cat": "relogios_presentes", "qtr": "2017-Q2", "state": "RS", "norm": 0.0331}, {"x": 1, "y": 3, "z": 4, "revenue": 4285.0, "orders": 19, "cat": "relogios_presentes", "qtr": "2017-Q2", "state": "PR", "norm": 0.0332}, {"x": 1, "y": 4, "z": 0, "revenue": 40358.0, "orders": 228, "cat": "relogios_presentes", "qtr": "2017-Q3", "state": "SP", "norm": 0.3127}, {"x": 1, "y": 4, "z": 1, "revenue": 21247.0, "orders": 98, "cat": "relogios_presentes", "qtr": "2017-Q3", "state": "RJ", "norm": 0.1646}, {"x": 1, "y": 4, "z": 2, "revenue": 9881.0, "orders": 50, "cat": "relogios_presentes", "qtr": "2017-Q3", "state": "MG", "norm": 0.0766}, {"x": 1, "y": 4, "z": 3, "revenue": 6612.0, "orders": 32, "cat": "relogios_presentes", "qtr": "2017-Q3", "state": "RS", "norm": 0.0512}, {"x": 1, "y": 4, "z": 4, "revenue": 6688.0, "orders": 31, "cat": "relogios_presentes", "qtr": "2017-Q3", "state": "PR", "norm": 0.0518}, {"x": 1, "y": 5, "z": 0, "revenue": 92054.0, "orders": 421, "cat": "relogios_presentes", "qtr": "2017-Q4", "state": "SP", "norm": 0.7133}, {"x": 1, "y": 5, "z": 1, "revenue": 34103.0, "orders": 145, "cat": "relogios_presentes", "qtr": "2017-Q4", "state": "RJ", "norm": 0.2642}, {"x": 1, "y": 5, "z": 2, "revenue": 31539.0, "orders": 115, "cat": "relogios_presentes", "qtr": "2017-Q4", "state": "MG", "norm": 0.2444}, {"x": 1, "y": 5, "z": 3, "revenue": 11786.0, "orders": 53, "cat": "relogios_presentes", "qtr": "2017-Q4", "state": "RS", "norm": 0.0913}, {"x": 1, "y": 5, "z": 4, "revenue": 8491.0, "orders": 39, "cat": "relogios_presentes", "qtr": "2017-Q4", "state": "PR", "norm": 0.0658}, {"x": 1, "y": 6, "z": 0, "revenue": 87315.0, "orders": 384, "cat": "relogios_presentes", "qtr": "2018-Q1", "state": "SP", "norm": 0.6766}, {"x": 1, "y": 6, "z": 1, "revenue": 37681.0, "orders": 154, "cat": "relogios_presentes", "qtr": "2018-Q1", "state": "RJ", "norm": 0.292}, {"x": 1, "y": 6, "z": 2, "revenue": 23443.0, "orders": 122, "cat": "relogios_presentes", "qtr": "2018-Q1", "state": "MG", "norm": 0.1816}, {"x": 1, "y": 6, "z": 3, "revenue": 8473.0, "orders": 44, "cat": "relogios_presentes", "qtr": "2018-Q1", "state": "RS", "norm": 0.0657}, {"x": 1, "y": 6, "z": 4, "revenue": 13309.0, "orders": 46, "cat": "relogios_presentes", "qtr": "2018-Q1", "state": "PR", "norm": 0.1031}, {"x": 1, "y": 7, "z": 0, "revenue": 114589.0, "orders": 572, "cat": "relogios_presentes", "qtr": "2018-Q2", "state": "SP", "norm": 0.8879}, {"x": 1, "y": 7, "z": 1, "revenue": 51705.0, "orders": 240, "cat": "relogios_presentes", "qtr": "2018-Q2", "state": "RJ", "norm": 0.4006}, {"x": 1, "y": 7, "z": 2, "revenue": 32609.0, "orders": 175, "cat": "relogios_presentes", "qtr": "2018-Q2", "state": "MG", "norm": 0.2527}, {"x": 1, "y": 7, "z": 3, "revenue": 10438.0, "orders": 45, "cat": "relogios_presentes", "qtr": "2018-Q2", "state": "RS", "norm": 0.0809}, {"x": 1, "y": 7, "z": 4, "revenue": 17748.0, "orders": 78, "cat": "relogios_presentes", "qtr": "2018-Q2", "state": "PR", "norm": 0.1375}, {"x": 1, "y": 8, "z": 0, "revenue": 61664.0, "orders": 354, "cat": "relogios_presentes", "qtr": "2018-Q3", "state": "SP", "norm": 0.4778}, {"x": 1, "y": 8, "z": 1, "revenue": 19128.0, "orders": 108, "cat": "relogios_presentes", "qtr": "2018-Q3", "state": "RJ", "norm": 0.1482}, {"x": 1, "y": 8, "z": 2, "revenue": 18057.0, "orders": 102, "cat": "relogios_presentes", "qtr": "2018-Q3", "state": "MG", "norm": 0.1399}, {"x": 1, "y": 8, "z": 3, "revenue": 5105.0, "orders": 30, "cat": "relogios_presentes", "qtr": "2018-Q3", "state": "RS", "norm": 0.0396}, {"x": 1, "y": 8, "z": 4, "revenue": 10762.0, "orders": 58, "cat": "relogios_presentes", "qtr": "2018-Q3", "state": "PR", "norm": 0.0834}, {"x": 2, "y": 0, "z": 0, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q3", "state": "SP", "norm": 0.0}, {"x": 2, "y": 0, "z": 1, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q3", "state": "RJ", "norm": 0.0}, {"x": 2, "y": 0, "z": 2, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q3", "state": "MG", "norm": 0.0}, {"x": 2, "y": 0, "z": 3, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q3", "state": "RS", "norm": 0.0}, {"x": 2, "y": 0, "z": 4, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q3", "state": "PR", "norm": 0.0}, {"x": 2, "y": 1, "z": 0, "revenue": 30.0, "orders": 1, "cat": "cama_mesa_banho", "qtr": "2016-Q4", "state": "SP", "norm": 0.0002}, {"x": 2, "y": 1, "z": 1, "revenue": 60.0, "orders": 1, "cat": "cama_mesa_banho", "qtr": "2016-Q4", "state": "RJ", "norm": 0.0005}, {"x": 2, "y": 1, "z": 2, "revenue": 170.0, "orders": 1, "cat": "cama_mesa_banho", "qtr": "2016-Q4", "state": "MG", "norm": 0.0013}, {"x": 2, "y": 1, "z": 3, "revenue": 0, "orders": 0, "cat": "cama_mesa_banho", "qtr": "2016-Q4", "state": "RS", "norm": 0.0}, {"x": 2, "y": 1, "z": 4, "revenue": 219.0, "orders": 2, "cat": "cama_mesa_banho", "qtr": "2016-Q4", "state": "PR", "norm": 0.0017}, {"x": 2, "y": 2, "z": 0, "revenue": 21279.0, "orders": 190, "cat": "cama_mesa_banho", "qtr": "2017-Q1", "state": "SP", "norm": 0.1649}, {"x": 2, "y": 2, "z": 1, "revenue": 8256.0, "orders": 72, "cat": "cama_mesa_banho", "qtr": "2017-Q1", "state": "RJ", "norm": 0.064}, {"x": 2, "y": 2, "z": 2, "revenue": 9374.0, "orders": 71, "cat": "cama_mesa_banho", "qtr": "2017-Q1", "state": "MG", "norm": 0.0726}, {"x": 2, "y": 2, "z": 3, "revenue": 1724.0, "orders": 22, "cat": "cama_mesa_banho", "qtr": "2017-Q1", "state": "RS", "norm": 0.0134}, {"x": 2, "y": 2, "z": 4, "revenue": 3675.0, "orders": 26, "cat": "cama_mesa_banho", "qtr": "2017-Q1", "state": "PR", "norm": 0.0285}, {"x": 2, "y": 3, "z": 0, "revenue": 47145.0, "orders": 397, "cat": "cama_mesa_banho", "qtr": "2017-Q2", "state": "SP", "norm": 0.3653}, {"x": 2, "y": 3, "z": 1, "revenue": 13940.0, "orders": 116, "cat": "cama_mesa_banho", "qtr": "2017-Q2", "state": "RJ", "norm": 0.108}, {"x": 2, "y": 3, "z": 2, "revenue": 13329.0, "orders": 119, "cat": "cama_mesa_banho", "qtr": "2017-Q2", "state": "MG", "norm": 0.1033}, {"x": 2, "y": 3, "z": 3, "revenue": 6466.0, "orders": 61, "cat": "cama_mesa_banho", "qtr": "2017-Q2", "state": "RS", "norm": 0.0501}, {"x": 2, "y": 3, "z": 4, "revenue": 4061.0, "orders": 40, "cat": "cama_mesa_banho", "qtr": "2017-Q2", "state": "PR", "norm": 0.0315}, {"x": 2, "y": 4, "z": 0, "revenue": 74478.0, "orders": 607, "cat": "cama_mesa_banho", "qtr": "2017-Q3", "state": "SP", "norm": 0.5771}, {"x": 2, "y": 4, "z": 1, "revenue": 28629.0, "orders": 218, "cat": "cama_mesa_banho", "qtr": "2017-Q3", "state": "RJ", "norm": 0.2218}, {"x": 2, "y": 4, "z": 2, "revenue": 23417.0, "orders": 162, "cat": "cama_mesa_banho", "qtr": "2017-Q3", "state": "MG", "norm": 0.1814}, {"x": 2, "y": 4, "z": 3, "revenue": 12083.0, "orders": 102, "cat": "cama_mesa_banho", "qtr": "2017-Q3", "state": "RS", "norm": 0.0936}, {"x": 2, "y": 4, "z": 4, "revenue": 7161.0, "orders": 45, "cat": "cama_mesa_banho", "qtr": "2017-Q3", "state": "PR", "norm": 0.0555}, {"x": 2, "y": 5, "z": 0, "revenue": 84268.0, "orders": 733, "cat": "cama_mesa_banho", "qtr": "2017-Q4", "state": "SP", "norm": 0.653}, {"x": 2, "y": 5, "z": 1, "revenue": 39443.0, "orders": 324, "cat": "cama_mesa_banho", "qtr": "2017-Q4", "state": "RJ", "norm": 0.3056}, {"x": 2, "y": 5, "z": 2, "revenue": 24250.0, "orders": 217, "cat": "cama_mesa_banho", "qtr": "2017-Q4", "state": "MG", "norm": 0.1879}, {"x": 2, "y": 5, "z": 3, "revenue": 10249.0, "orders": 97, "cat": "cama_mesa_banho", "qtr": "2017-Q4", "state": "RS", "norm": 0.0794}, {"x": 2, "y": 5, "z": 4, "revenue": 9495.0, "orders": 85, "cat": "cama_mesa_banho", "qtr": "2017-Q4", "state": "PR", "norm": 0.0736}, {"x": 2, "y": 6, "z": 0, "revenue": 101856.0, "orders": 916, "cat": "cama_mesa_banho", "qtr": "2018-Q1", "state": "SP", "norm": 0.7892}, {"x": 2, "y": 6, "z": 1, "revenue": 30653.0, "orders": 279, "cat": "cama_mesa_banho", "qtr": "2018-Q1", "state": "RJ", "norm": 0.2375}, {"x": 2, "y": 6, "z": 2, "revenue": 28788.0, "orders": 244, "cat": "cama_mesa_banho", "qtr": "2018-Q1", "state": "MG", "norm": 0.2231}, {"x": 2, "y": 6, "z": 3, "revenue": 11264.0, "orders": 99, "cat": "cama_mesa_banho", "qtr": "2018-Q1", "state": "RS", "norm": 0.0873}, {"x": 2, "y": 6, "z": 4, "revenue": 10801.0, "orders": 96, "cat": "cama_mesa_banho", "qtr": "2018-Q1", "state": "PR", "norm": 0.0837}, {"x": 2, "y": 7, "z": 0, "revenue": 113436.0, "orders": 984, "cat": "cama_mesa_banho", "qtr": "2018-Q2", "state": "SP", "norm": 0.879}, {"x": 2, "y": 7, "z": 1, "revenue": 27410.0, "orders": 224, "cat": "cama_mesa_banho", "qtr": "2018-Q2", "state": "RJ", "norm": 0.2124}, {"x": 2, "y": 7, "z": 2, "revenue": 26600.0, "orders": 210, "cat": "cama_mesa_banho", "qtr": "2018-Q2", "state": "MG", "norm": 0.2061}, {"x": 2, "y": 7, "z": 3, "revenue": 16323.0, "orders": 108, "cat": "cama_mesa_banho", "qtr": "2018-Q2", "state": "RS", "norm": 0.1265}, {"x": 2, "y": 7, "z": 4, "revenue": 8603.0, "orders": 72, "cat": "cama_mesa_banho", "qtr": "2018-Q2", "state": "PR", "norm": 0.0667}, {"x": 2, "y": 8, "z": 0, "revenue": 66822.0, "orders": 588, "cat": "cama_mesa_banho", "qtr": "2018-Q3", "state": "SP", "norm": 0.5178}, {"x": 2, "y": 8, "z": 1, "revenue": 13477.0, "orders": 159, "cat": "cama_mesa_banho", "qtr": "2018-Q3", "state": "RJ", "norm": 0.1044}, {"x": 2, "y": 8, "z": 2, "revenue": 12845.0, "orders": 105, "cat": "cama_mesa_banho", "qtr": "2018-Q3", "state": "MG", "norm": 0.0995}, {"x": 2, "y": 8, "z": 3, "revenue": 5556.0, "orders": 51, "cat": "cama_mesa_banho", "qtr": "2018-Q3", "state": "RS", "norm": 0.0431}, {"x": 2, "y": 8, "z": 4, "revenue": 3916.0, "orders": 36, "cat": "cama_mesa_banho", "qtr": "2018-Q3", "state": "PR", "norm": 0.0303}, {"x": 3, "y": 0, "z": 0, "revenue": 0, "orders": 0, "cat": "esporte_lazer", "qtr": "2016-Q3", "state": "SP", "norm": 0.0}, {"x": 3, "y": 0, "z": 1, "revenue": 0, "orders": 0, "cat": "esporte_lazer", "qtr": "2016-Q3", "state": "RJ", "norm": 0.0}, {"x": 3, "y": 0, "z": 2, "revenue": 0, "orders": 0, "cat": "esporte_lazer", "qtr": "2016-Q3", "state": "MG", "norm": 0.0}, {"x": 3, "y": 0, "z": 3, "revenue": 0, "orders": 0, "cat": "esporte_lazer", "qtr": "2016-Q3", "state": "RS", "norm": 0.0}, {"x": 3, "y": 0, "z": 4, "revenue": 0, "orders": 0, "cat": "esporte_lazer", "qtr": "2016-Q3", "state": "PR", "norm": 0.0}, {"x": 3, "y": 1, "z": 0, "revenue": 259.0, "orders": 4, "cat": "esporte_lazer", "qtr": "2016-Q4", "state": "SP", "norm": 0.002}, {"x": 3, "y": 1, "z": 1, "revenue": 1783.0, "orders": 4, "cat": "esporte_lazer", "qtr": "2016-Q4", "state": "RJ", "norm": 0.0138}, {"x": 3, "y": 1, "z": 2, "revenue": 150.0, "orders": 1, "cat": "esporte_lazer", "qtr": "2016-Q4", "state": "MG", "norm": 0.0012}, {"x": 3, "y": 1, "z": 3, "revenue": 238.0, "orders": 5, "cat": "esporte_lazer", "qtr": "2016-Q4", "state": "RS", "norm": 0.0018}, {"x": 3, "y": 1, "z": 4, "revenue": 19.0, "orders": 1, "cat": "esporte_lazer", "qtr": "2016-Q4", "state": "PR", "norm": 0.0001}, {"x": 3, "y": 2, "z": 0, "revenue": 24986.0, "orders": 145, "cat": "esporte_lazer", "qtr": "2017-Q1", "state": "SP", "norm": 0.1936}, {"x": 3, "y": 2, "z": 1, "revenue": 10787.0, "orders": 41, "cat": "esporte_lazer", "qtr": "2017-Q1", "state": "RJ", "norm": 0.0836}, {"x": 3, "y": 2, "z": 2, "revenue": 5984.0, "orders": 44, "cat": "esporte_lazer", "qtr": "2017-Q1", "state": "MG", "norm": 0.0464}, {"x": 3, "y": 2, "z": 3, "revenue": 1858.0, "orders": 19, "cat": "esporte_lazer", "qtr": "2017-Q1", "state": "RS", "norm": 0.0144}, {"x": 3, "y": 2, "z": 4, "revenue": 1987.0, "orders": 22, "cat": "esporte_lazer", "qtr": "2017-Q1", "state": "PR", "norm": 0.0154}, {"x": 3, "y": 3, "z": 0, "revenue": 33823.0, "orders": 290, "cat": "esporte_lazer", "qtr": "2017-Q2", "state": "SP", "norm": 0.2621}, {"x": 3, "y": 3, "z": 1, "revenue": 15021.0, "orders": 85, "cat": "esporte_lazer", "qtr": "2017-Q2", "state": "RJ", "norm": 0.1164}, {"x": 3, "y": 3, "z": 2, "revenue": 12641.0, "orders": 88, "cat": "esporte_lazer", "qtr": "2017-Q2", "state": "MG", "norm": 0.0979}, {"x": 3, "y": 3, "z": 3, "revenue": 3711.0, "orders": 31, "cat": "esporte_lazer", "qtr": "2017-Q2", "state": "RS", "norm": 0.0288}, {"x": 3, "y": 3, "z": 4, "revenue": 8125.0, "orders": 40, "cat": "esporte_lazer", "qtr": "2017-Q2", "state": "PR", "norm": 0.063}, {"x": 3, "y": 4, "z": 0, "revenue": 51915.0, "orders": 436, "cat": "esporte_lazer", "qtr": "2017-Q3", "state": "SP", "norm": 0.4023}, {"x": 3, "y": 4, "z": 1, "revenue": 17198.0, "orders": 133, "cat": "esporte_lazer", "qtr": "2017-Q3", "state": "RJ", "norm": 0.1333}, {"x": 3, "y": 4, "z": 2, "revenue": 13426.0, "orders": 117, "cat": "esporte_lazer", "qtr": "2017-Q3", "state": "MG", "norm": 0.104}, {"x": 3, "y": 4, "z": 3, "revenue": 10053.0, "orders": 90, "cat": "esporte_lazer", "qtr": "2017-Q3", "state": "RS", "norm": 0.0779}, {"x": 3, "y": 4, "z": 4, "revenue": 9665.0, "orders": 71, "cat": "esporte_lazer", "qtr": "2017-Q3", "state": "PR", "norm": 0.0749}, {"x": 3, "y": 5, "z": 0, "revenue": 70216.0, "orders": 589, "cat": "esporte_lazer", "qtr": "2017-Q4", "state": "SP", "norm": 0.5441}, {"x": 3, "y": 5, "z": 1, "revenue": 27703.0, "orders": 193, "cat": "esporte_lazer", "qtr": "2017-Q4", "state": "RJ", "norm": 0.2147}, {"x": 3, "y": 5, "z": 2, "revenue": 19177.0, "orders": 166, "cat": "esporte_lazer", "qtr": "2017-Q4", "state": "MG", "norm": 0.1486}, {"x": 3, "y": 5, "z": 3, "revenue": 10231.0, "orders": 76, "cat": "esporte_lazer", "qtr": "2017-Q4", "state": "RS", "norm": 0.0793}, {"x": 3, "y": 5, "z": 4, "revenue": 9231.0, "orders": 63, "cat": "esporte_lazer", "qtr": "2017-Q4", "state": "PR", "norm": 0.0715}, {"x": 3, "y": 6, "z": 0, "revenue": 101047.0, "orders": 801, "cat": "esporte_lazer", "qtr": "2018-Q1", "state": "SP", "norm": 0.783}, {"x": 3, "y": 6, "z": 1, "revenue": 32342.0, "orders": 223, "cat": "esporte_lazer", "qtr": "2018-Q1", "state": "RJ", "norm": 0.2506}, {"x": 3, "y": 6, "z": 2, "revenue": 28400.0, "orders": 211, "cat": "esporte_lazer", "qtr": "2018-Q1", "state": "MG", "norm": 0.2201}, {"x": 3, "y": 6, "z": 3, "revenue": 17307.0, "orders": 103, "cat": "esporte_lazer", "qtr": "2018-Q1", "state": "RS", "norm": 0.1341}, {"x": 3, "y": 6, "z": 4, "revenue": 12091.0, "orders": 105, "cat": "esporte_lazer", "qtr": "2018-Q1", "state": "PR", "norm": 0.0937}, {"x": 3, "y": 7, "z": 0, "revenue": 76466.0, "orders": 623, "cat": "esporte_lazer", "qtr": "2018-Q2", "state": "SP", "norm": 0.5925}, {"x": 3, "y": 7, "z": 1, "revenue": 19134.0, "orders": 149, "cat": "esporte_lazer", "qtr": "2018-Q2", "state": "RJ", "norm": 0.1483}, {"x": 3, "y": 7, "z": 2, "revenue": 19662.0, "orders": 159, "cat": "esporte_lazer", "qtr": "2018-Q2", "state": "MG", "norm": 0.1524}, {"x": 3, "y": 7, "z": 3, "revenue": 9332.0, "orders": 69, "cat": "esporte_lazer", "qtr": "2018-Q2", "state": "RS", "norm": 0.0723}, {"x": 3, "y": 7, "z": 4, "revenue": 10399.0, "orders": 76, "cat": "esporte_lazer", "qtr": "2018-Q2", "state": "PR", "norm": 0.0806}, {"x": 3, "y": 8, "z": 0, "revenue": 45020.0, "orders": 408, "cat": "esporte_lazer", "qtr": "2018-Q3", "state": "SP", "norm": 0.3488}, {"x": 3, "y": 8, "z": 1, "revenue": 11516.0, "orders": 97, "cat": "esporte_lazer", "qtr": "2018-Q3", "state": "RJ", "norm": 0.0892}, {"x": 3, "y": 8, "z": 2, "revenue": 17188.0, "orders": 81, "cat": "esporte_lazer", "qtr": "2018-Q3", "state": "MG", "norm": 0.1332}, {"x": 3, "y": 8, "z": 3, "revenue": 2867.0, "orders": 28, "cat": "esporte_lazer", "qtr": "2018-Q3", "state": "RS", "norm": 0.0222}, {"x": 3, "y": 8, "z": 4, "revenue": 7450.0, "orders": 50, "cat": "esporte_lazer", "qtr": "2018-Q3", "state": "PR", "norm": 0.0577}, {"x": 4, "y": 0, "z": 0, "revenue": 0, "orders": 0, "cat": "informatica_acessorios", "qtr": "2016-Q3", "state": "SP", "norm": 0.0}, {"x": 4, "y": 0, "z": 1, "revenue": 0, "orders": 0, "cat": "informatica_acessorios", "qtr": "2016-Q3", "state": "RJ", "norm": 0.0}, {"x": 4, "y": 0, "z": 2, "revenue": 0, "orders": 0, "cat": "informatica_acessorios", "qtr": "2016-Q3", "state": "MG", "norm": 0.0}, {"x": 4, "y": 0, "z": 3, "revenue": 0, "orders": 0, "cat": "informatica_acessorios", "qtr": "2016-Q3", "state": "RS", "norm": 0.0}, {"x": 4, "y": 0, "z": 4, "revenue": 0, "orders": 0, "cat": "informatica_acessorios", "qtr": "2016-Q3", "state": "PR", "norm": 0.0}, {"x": 4, "y": 1, "z": 0, "revenue": 365.0, "orders": 5, "cat": "informatica_acessorios", "qtr": "2016-Q4", "state": "SP", "norm": 0.0028}, {"x": 4, "y": 1, "z": 1, "revenue": 38.0, "orders": 1, "cat": "informatica_acessorios", "qtr": "2016-Q4", "state": "RJ", "norm": 0.0003}, {"x": 4, "y": 1, "z": 2, "revenue": 570.0, "orders": 4, "cat": "informatica_acessorios", "qtr": "2016-Q4", "state": "MG", "norm": 0.0044}, {"x": 4, "y": 1, "z": 3, "revenue": 234.0, "orders": 2, "cat": "informatica_acessorios", "qtr": "2016-Q4", "state": "RS", "norm": 0.0018}, {"x": 4, "y": 1, "z": 4, "revenue": 44.0, "orders": 1, "cat": "informatica_acessorios", "qtr": "2016-Q4", "state": "PR", "norm": 0.0003}, {"x": 4, "y": 2, "z": 0, "revenue": 14383.0, "orders": 103, "cat": "informatica_acessorios", "qtr": "2017-Q1", "state": "SP", "norm": 0.1114}, {"x": 4, "y": 2, "z": 1, "revenue": 6340.0, "orders": 39, "cat": "informatica_acessorios", "qtr": "2017-Q1", "state": "RJ", "norm": 0.0491}, {"x": 4, "y": 2, "z": 2, "revenue": 5567.0, "orders": 36, "cat": "informatica_acessorios", "qtr": "2017-Q1", "state": "MG", "norm": 0.0431}, {"x": 4, "y": 2, "z": 3, "revenue": 2696.0, "orders": 11, "cat": "informatica_acessorios", "qtr": "2017-Q1", "state": "RS", "norm": 0.0209}, {"x": 4, "y": 2, "z": 4, "revenue": 1601.0, "orders": 15, "cat": "informatica_acessorios", "qtr": "2017-Q1", "state": "PR", "norm": 0.0124}, {"x": 4, "y": 3, "z": 0, "revenue": 35598.0, "orders": 221, "cat": "informatica_acessorios", "qtr": "2017-Q2", "state": "SP", "norm": 0.2758}, {"x": 4, "y": 3, "z": 1, "revenue": 13038.0, "orders": 71, "cat": "informatica_acessorios", "qtr": "2017-Q2", "state": "RJ", "norm": 0.101}, {"x": 4, "y": 3, "z": 2, "revenue": 7647.0, "orders": 71, "cat": "informatica_acessorios", "qtr": "2017-Q2", "state": "MG", "norm": 0.0593}, {"x": 4, "y": 3, "z": 3, "revenue": 4893.0, "orders": 42, "cat": "informatica_acessorios", "qtr": "2017-Q2", "state": "RS", "norm": 0.0379}, {"x": 4, "y": 3, "z": 4, "revenue": 5549.0, "orders": 31, "cat": "informatica_acessorios", "qtr": "2017-Q2", "state": "PR", "norm": 0.043}, {"x": 4, "y": 4, "z": 0, "revenue": 39778.0, "orders": 298, "cat": "informatica_acessorios", "qtr": "2017-Q3", "state": "SP", "norm": 0.3082}, {"x": 4, "y": 4, "z": 1, "revenue": 20427.0, "orders": 114, "cat": "informatica_acessorios", "qtr": "2017-Q3", "state": "RJ", "norm": 0.1583}, {"x": 4, "y": 4, "z": 2, "revenue": 8948.0, "orders": 81, "cat": "informatica_acessorios", "qtr": "2017-Q3", "state": "MG", "norm": 0.0693}, {"x": 4, "y": 4, "z": 3, "revenue": 8504.0, "orders": 59, "cat": "informatica_acessorios", "qtr": "2017-Q3", "state": "RS", "norm": 0.0659}, {"x": 4, "y": 4, "z": 4, "revenue": 3955.0, "orders": 36, "cat": "informatica_acessorios", "qtr": "2017-Q3", "state": "PR", "norm": 0.0306}, {"x": 4, "y": 5, "z": 0, "revenue": 53652.0, "orders": 351, "cat": "informatica_acessorios", "qtr": "2017-Q4", "state": "SP", "norm": 0.4157}, {"x": 4, "y": 5, "z": 1, "revenue": 22006.0, "orders": 130, "cat": "informatica_acessorios", "qtr": "2017-Q4", "state": "RJ", "norm": 0.1705}, {"x": 4, "y": 5, "z": 2, "revenue": 23266.0, "orders": 136, "cat": "informatica_acessorios", "qtr": "2017-Q4", "state": "MG", "norm": 0.1803}, {"x": 4, "y": 5, "z": 3, "revenue": 11608.0, "orders": 58, "cat": "informatica_acessorios", "qtr": "2017-Q4", "state": "RS", "norm": 0.0899}, {"x": 4, "y": 5, "z": 4, "revenue": 7652.0, "orders": 52, "cat": "informatica_acessorios", "qtr": "2017-Q4", "state": "PR", "norm": 0.0593}, {"x": 4, "y": 6, "z": 0, "revenue": 114102.0, "orders": 808, "cat": "informatica_acessorios", "qtr": "2018-Q1", "state": "SP", "norm": 0.8841}, {"x": 4, "y": 6, "z": 1, "revenue": 37038.0, "orders": 290, "cat": "informatica_acessorios", "qtr": "2018-Q1", "state": "RJ", "norm": 0.287}, {"x": 4, "y": 6, "z": 2, "revenue": 37223.0, "orders": 287, "cat": "informatica_acessorios", "qtr": "2018-Q1", "state": "MG", "norm": 0.2884}, {"x": 4, "y": 6, "z": 3, "revenue": 14973.0, "orders": 115, "cat": "informatica_acessorios", "qtr": "2018-Q1", "state": "RS", "norm": 0.116}, {"x": 4, "y": 6, "z": 4, "revenue": 16399.0, "orders": 112, "cat": "informatica_acessorios", "qtr": "2018-Q1", "state": "PR", "norm": 0.1271}, {"x": 4, "y": 7, "z": 0, "revenue": 67266.0, "orders": 554, "cat": "informatica_acessorios", "qtr": "2018-Q2", "state": "SP", "norm": 0.5212}, {"x": 4, "y": 7, "z": 1, "revenue": 15536.0, "orders": 124, "cat": "informatica_acessorios", "qtr": "2018-Q2", "state": "RJ", "norm": 0.1204}, {"x": 4, "y": 7, "z": 2, "revenue": 22175.0, "orders": 162, "cat": "informatica_acessorios", "qtr": "2018-Q2", "state": "MG", "norm": 0.1718}, {"x": 4, "y": 7, "z": 3, "revenue": 16688.0, "orders": 66, "cat": "informatica_acessorios", "qtr": "2018-Q2", "state": "RS", "norm": 0.1293}, {"x": 4, "y": 7, "z": 4, "revenue": 5389.0, "orders": 50, "cat": "informatica_acessorios", "qtr": "2018-Q2", "state": "PR", "norm": 0.0418}, {"x": 4, "y": 8, "z": 0, "revenue": 35067.0, "orders": 339, "cat": "informatica_acessorios", "qtr": "2018-Q3", "state": "SP", "norm": 0.2717}, {"x": 4, "y": 8, "z": 1, "revenue": 9276.0, "orders": 90, "cat": "informatica_acessorios", "qtr": "2018-Q3", "state": "RJ", "norm": 0.0719}, {"x": 4, "y": 8, "z": 2, "revenue": 9719.0, "orders": 100, "cat": "informatica_acessorios", "qtr": "2018-Q3", "state": "MG", "norm": 0.0753}, {"x": 4, "y": 8, "z": 3, "revenue": 4555.0, "orders": 37, "cat": "informatica_acessorios", "qtr": "2018-Q3", "state": "RS", "norm": 0.0353}, {"x": 4, "y": 8, "z": 4, "revenue": 4521.0, "orders": 41, "cat": "informatica_acessorios", "qtr": "2018-Q3", "state": "PR", "norm": 0.035}];
+const CATS    = ["beleza_saude", "relogios_presentes", "cama_mesa_banho", "esporte_lazer", "informatica_acessorios"];
+const QTRS    = ["2016-Q3", "2016-Q4", "2017-Q1", "2017-Q2", "2017-Q3", "2017-Q4", "2018-Q1", "2018-Q2", "2018-Q3"];
+const STATES  = ["SP", "RJ", "MG", "RS", "PR"];
+const NX = CATS.length, NY = QTRS.length, NZ = STATES.length;
+
+// ── Scene setup ───────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({canvas: document.getElementById('canvas'), antialias:true});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0a0d14);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 200);
+camera.position.set(12, 10, 16);
+camera.lookAt(0, 0, 0);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x334466, 1.2));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(10, 20, 10);
+scene.add(dir);
+
+// ── Color mapping ─────────────────────────────────────────────────────────────
+function normToColor(n) {
+  if (n < 0.0001) return new THREE.Color(0x111827);  // empty = very dark
+  if (n < 0.25)   return new THREE.Color(0x0d3b6e);
+  if (n < 0.50)   return new THREE.Color(0x1a6fb5);
+  if (n < 0.75)   return new THREE.Color(0x4C8EDA);
+  return new THREE.Color(0x2ecc71);
+}
+
+// ── Build instanced cubes ─────────────────────────────────────────────────────
+const GAP   = 1.6;
+const SIZE  = 1.0;
+const geo   = new THREE.BoxGeometry(SIZE, SIZE, SIZE);
+const mat   = new THREE.MeshPhongMaterial({vertexColors: true, transparent:true, opacity:0.92});
+
+// Compute center offset
+const cx = (NX - 1) * GAP / 2;
+const cy = (NY - 1) * GAP / 2;
+const cz = (NZ - 1) * GAP / 2;
+
+const meshes = [];
+const dummy  = new THREE.Object3D();
+
+CELLS.forEach(cell => {
+  const col = normToColor(cell.norm);
+  const g   = geo.clone();
+  // Per-vertex color
+  const colors = [];
+  for (let i=0; i<g.attributes.position.count; i++) colors.push(col.r, col.g, col.b);
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+  const m = new THREE.Mesh(g, mat.clone());
+  m.position.set(
+    cell.x * GAP - cx,
+    cell.y * GAP - cy,
+    cell.z * GAP - cz
+  );
+  m.userData = cell;
+  scene.add(m);
+  meshes.push(m);
+});
+
+// Wireframe bounding box
+const boxGeo = new THREE.BoxGeometry(
+  NX*GAP, NY*GAP, NZ*GAP
+);
+const edges = new THREE.EdgesGeometry(boxGeo);
+const lineMat = new THREE.LineBasicMaterial({color:0x2e3250, opacity:0.5, transparent:true});
+scene.add(new THREE.LineSegments(edges, lineMat));
+
+// Axes lines
+function axisLine(start, end, color) {
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(...start), new THREE.Vector3(...end)
+  ]);
+  return new THREE.Line(g, new THREE.LineBasicMaterial({color}));
+}
+const hw = NX*GAP/2, hh = NY*GAP/2, hd = NZ*GAP/2;
+scene.add(axisLine([-hw-1,-hh-1,-hd-1],[hw+2,-hh-1,-hd-1], 0x4C8EDA)); // X - Category
+scene.add(axisLine([-hw-1,-hh-1,-hd-1],[-hw-1,hh+2,-hd-1], 0x2ecc71)); // Y - Quarter
+scene.add(axisLine([-hw-1,-hh-1,-hd-1],[-hw-1,-hh-1,hd+2], 0xFF6B35)); // Z - State
+
+// ── Orbit controls (manual) ───────────────────────────────────────────────────
+let isDragging=false, prevX=0, prevY=0;
+let rotX=0.4, rotY=0.5;
+let autoSpin=true;
+const pivot = new THREE.Group();
+scene.add(pivot);
+// Move all meshes under pivot
+meshes.forEach(m => { scene.remove(m); pivot.add(m); });
+scene.remove(edges);
+pivot.add(edges);
+scene.remove(dir);
+pivot.add(dir);
+
+document.addEventListener('mousedown', e=>{ isDragging=true; prevX=e.clientX; prevY=e.clientY; autoSpin=false; });
+document.addEventListener('mouseup',   ()=>{ isDragging=false; });
+document.addEventListener('mousemove', e=>{
+  if(isDragging){
+    rotY += (e.clientX - prevX) * 0.008;
+    rotX += (e.clientY - prevY) * 0.008;
+    prevX=e.clientX; prevY=e.clientY;
+  }
+  handleHover(e);
+});
+document.addEventListener('wheel', e=>{
+  camera.position.multiplyScalar(1 + e.deltaY * 0.001);
+});
+
+// ── Raycaster / Hover ─────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const tip       = document.getElementById('tip');
+let   hovered   = null;
+
+function handleHover(e) {
+  mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pivot.children.filter(c=>c.isMesh));
+
+  if (hits.length > 0) {
+    const obj = hits[0].object;
+    const d   = obj.userData;
+    if (d.revenue > 0) {
+      document.getElementById('t-title').textContent = d.cat;
+      document.getElementById('t-rev').textContent   = 'R$ ' + d.revenue.toLocaleString();
+      document.getElementById('t-ord').textContent   = d.orders.toLocaleString();
+      document.getElementById('t-qtr').textContent   = d.qtr;
+      document.getElementById('t-st').textContent    = d.state;
+      tip.style.display  = 'block';
+      tip.style.left     = (e.clientX + 14) + 'px';
+      tip.style.top      = (e.clientY - 10) + 'px';
+      if (hovered !== obj) {
+        if (hovered) hovered.scale.set(1,1,1);
+        obj.scale.set(1.25,1.25,1.25);
+        hovered = obj;
+      }
+      return;
+    }
+  }
+  tip.style.display = 'none';
+  if (hovered) { hovered.scale.set(1,1,1); hovered=null; }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  if (autoSpin) rotY += 0.004;
+  pivot.rotation.x = rotX;
+  pivot.rotation.y = rotY;
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
